@@ -306,6 +306,7 @@ in
     pkg-config
     gdb
     valgrind
+    hyprviz
 
     # ---------- language servers & formatters ----------
     nixd
