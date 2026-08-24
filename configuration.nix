@@ -1,9 +1,17 @@
-{ config, pkgs, ... }:
+########################################################################
+# NixOS configuration — BonnSnuffles
+#
+# Flake-based. Rebuild with:
+#   sudo nixos-rebuild switch --flake /etc/nixos#nixos
+#
+# `pkgs`          -> nixos-25.11 (stable base, incl. kernel)
+# `pkgs-unstable` -> nixos-unstable (cherry-picks only)
+# Both are pinned in flake.lock; `nix flake update` moves them.
+########################################################################
+
+{ config, pkgs, pkgs-unstable, caelestia-shell, ... }:
 
 let
-  # nixos-unstable channel — for packages pinned too far back in 25.11
-  unstable = import <nixos-unstable> { config.allowUnfree = true; };
-
   # Minecraft launcher.
   #   jdk8  -> 1.12-era packs (RLCraft, older FTB)
   #   jdk17 -> 1.18 - 1.20
@@ -13,9 +21,16 @@ let
   };
 
   # llama.cpp built against ROCm, for loose GGUF files Ollama can't load.
-  llamaCppRocm = unstable.llama-cpp.override {
+  # Unstable: ROCm support moves fast and 25.11's build lags.
+  llamaCppRocm = pkgs-unstable.llama-cpp.override {
     rocmSupport = true;
   };
+
+  # The caelestia shell package, with the CLI bundled in.
+  # Its runtime deps (fish, cava, aubio, ddcutil, brightnessctl,
+  # libqalculate, lm_sensors, grim, swappy, quickshell) are wrapped in
+  # by the flake — do NOT list them separately in systemPackages.
+  caelestiaShell = caelestia-shell.packages.${pkgs.system}.with-cli;
 in
 {
   imports = [ ./hardware-configuration.nix ];
@@ -44,6 +59,7 @@ in
   # Boot
   # ============================================================
   boot = {
+    # Resolves against stable 25.11, so this stays on a stable kernel.
     kernelPackages = pkgs.linuxPackages_latest;
 
     loader.grub = {
@@ -109,8 +125,11 @@ in
   };
 
   # ============================================================
-  # Desktop (Plasma 6 + SDDM)
+  # Desktop sessions
   # ============================================================
+  # Two sessions offered at the SDDM login screen:
+  #   Plasma   — fallback / known-good, keep it until Hyprland is dialed in
+  #   Hyprland — the caelestia setup
   services.xserver = {
     enable = true;
     xkb = {
@@ -122,6 +141,11 @@ in
   services.desktopManager.plasma6.enable = true;
   services.displayManager.sddm.enable = true;
 
+  programs.hyprland = {
+    enable = true;
+    xwayland.enable = true; # Steam, Discord, older game launchers
+  };
+
   # ============================================================
   # Local AI
   # ============================================================
@@ -130,8 +154,7 @@ in
   # llama  -> :8080    manual: systemctl --user start llama-server
   services.ollama = {
     enable = true;
-    package = unstable.ollama-rocm;
-    acceleration = "rocm";
+    package = pkgs-unstable.ollama-rocm;
 
     environmentVariables = {
       OLLAMA_KEEP_ALIVE = "0"; # unload immediately, frees VRAM
@@ -223,6 +246,8 @@ in
     packages = with pkgs; [
       inter
       liberation_ttf
+      material-symbols            # caelestia UI icons
+      nerd-fonts.caskaydia-cove   # caelestia default font
       nerd-fonts.jetbrains-mono
       nerd-fonts.symbols-only
       noto-fonts
@@ -242,11 +267,20 @@ in
   # ============================================================
   # Packages
   # ============================================================
+  # Convention: bare name = stable. `pkgs-unstable.` prefix = cherry-pick,
+  # with a comment saying why.
   environment.systemPackages = with pkgs; [
+
+    # ---------- desktop shell (hyprland / caelestia) ----------
+    caelestiaShell
+    wl-clipboard      # clipboard history; not bundled in the shell package
+    hyprpicker        # colour picker, used by caelestia's scheme tooling
+    hypridle
+    hyprlock
 
     # ---------- editors ----------
     claude-code
-    unstable.code-cursor
+    pkgs-unstable.code-cursor   # ships fast, stable lags
     vscode
     zed-editor
 
@@ -264,7 +298,7 @@ in
     clang
     sqlite
     delve
-   
+
     # ---------- build & debug ----------
     gnumake
     cmake
@@ -286,9 +320,12 @@ in
     typescript-language-server
     csharp-ls
     nodePackages.prettier
+
+    # ---------- infra ----------
     kind
     kubectl
     terraform
+
     # ---------- git ----------
     git
     gh
@@ -313,7 +350,7 @@ in
     # ---------- gaming ----------
     bottles
     heroic
-    unstable.lutris   # 25.11 pins 0.5.19
+    pkgs-unstable.lutris   # 25.11 pins 0.5.19
     mangohud
     prism
     protonup-qt
@@ -322,13 +359,13 @@ in
     wineWowPackages.staging
     winetricks
 
-    # ---------- desktop ----------
+    # ---------- desktop apps ----------
     vesktop
-    kdePackages.karousel
-    kdePackages.qtstyleplugin-kvantum
     kitty
     papirus-icon-theme
     zsh-powerlevel10k
+    kdePackages.qtstyleplugin-kvantum
+    kdePackages.karousel   # Plasma scrolling-WM; only used in the Plasma session
 
     # ---------- system ----------
     ethtool
