@@ -7,11 +7,16 @@
 # `pkgs`          -> nixos-25.11 (stable base, incl. kernel)
 # `pkgs-unstable` -> nixos-unstable (cherry-picks only)
 # Both are pinned in flake.lock; `nix flake update` moves them.
+#
+# Package convention: bare name = stable. `pkgs-unstable.` prefix =
+# cherry-pick, with a comment saying why.
 ########################################################################
 
-{ config, pkgs, pkgs-unstable, caelestia-shell, ... }:
+{ config, pkgs, pkgs-unstable, ... }:
 
 let
+  system = pkgs.stdenv.hostPlatform.system;
+
   # Minecraft launcher.
   #   jdk8  -> 1.12-era packs (RLCraft, older FTB)
   #   jdk17 -> 1.18 - 1.20
@@ -26,11 +31,6 @@ let
     rocmSupport = true;
   };
 
-  # The caelestia shell package, with the CLI bundled in.
-  # Its runtime deps (fish, cava, aubio, ddcutil, brightnessctl,
-  # libqalculate, lm_sensors, grim, swappy, quickshell) are wrapped in
-  # by the flake — do NOT list them separately in systemPackages.
-  caelestiaShell = caelestia-shell.packages.${pkgs.system}.with-cli;
 in
 {
   imports = [ ./hardware-configuration.nix ];
@@ -51,7 +51,7 @@ in
   };
 
   nixpkgs.config = {
-    allowUnfree = true;
+    allowUnfree = true; # covers steam, vscode, wowup-cf, etc.
     permittedInsecurePackages = [ "electron-39.8.10" ]; # vesktop
   };
 
@@ -59,7 +59,8 @@ in
   # Boot
   # ============================================================
   boot = {
-    # Resolves against stable 25.11, so this stays on a stable kernel.
+    # Newest mainline kernel packaged on the 25.11 branch. Not an LTS
+    # kernel, but it only moves when the pinned 25.11 revision moves.
     kernelPackages = pkgs.linuxPackages_latest;
 
     loader.grub = {
@@ -114,7 +115,6 @@ in
   # Audio (PipeWire)
   # ============================================================
   security.rtkit.enable = true;
-
   services.pulseaudio.enable = false;
 
   services.pipewire = {
@@ -188,7 +188,9 @@ in
   services.printing.enable = true;
   services.flatpak.enable = true;
 
-  virtualisation.docker.enable = true;
+  # Currently off. The "docker" group on the user is kept so turning
+  # this back on is a one-line change.
+  virtualisation.docker.enable = false;
   virtualisation.docker.package = pkgs.docker_29;
 
   # ============================================================
@@ -216,14 +218,18 @@ in
   # ============================================================
   # Gaming
   # ============================================================
-  programs.gamemode.enable = true;
-
   programs.steam = {
     enable = true;
     gamescopeSession.enable = true;
     remotePlay.openFirewall = true;
     localNetworkGameTransfers.openFirewall = true;
     extraCompatPackages = with pkgs; [ proton-ge-bin ];
+  };
+
+  programs.gamemode.enable = true;
+
+  environment.sessionVariables = {
+    MESA_SHADER_CACHE_MAX_SIZE = "50G";
   };
 
   # ============================================================
@@ -267,16 +273,14 @@ in
   # ============================================================
   # Packages
   # ============================================================
-  # Convention: bare name = stable. `pkgs-unstable.` prefix = cherry-pick,
-  # with a comment saying why.
   environment.systemPackages = with pkgs; [
 
     # ---------- desktop shell (hyprland / caelestia) ----------
-    caelestiaShell
     wl-clipboard      # clipboard history; not bundled in the shell package
     hyprpicker        # colour picker, used by caelestia's scheme tooling
     hypridle
     hyprlock
+    hyprviz           # GUI editor for Hyprland config
 
     # ---------- editors ----------
     claude-code
@@ -306,7 +310,6 @@ in
     pkg-config
     gdb
     valgrind
-    hyprviz
 
     # ---------- language servers & formatters ----------
     nixd
@@ -359,6 +362,10 @@ in
     vulkan-tools
     wineWowPackages.staging
     winetricks
+
+    # ---------- mod managers ----------
+    pkgs-unstable.deadlock-mod-manager   # new package; follows game patches, stable lags
+    pkgs-unstable.wowup-cf               # WoW addons (unfree; allowed above)
 
     # ---------- desktop apps ----------
     vesktop
